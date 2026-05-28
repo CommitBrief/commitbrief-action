@@ -74,5 +74,4 @@ Gate mode (pass/fail only, no comments, no `pull-requests: write` needed):
   need a local authenticated CLI, which isn't available in CI.
 - Pin `version:` to a released tag for reproducible CI; `latest` tracks the
   newest release.
-- License: GPL-3.0-or-later (matches the CommitBrief org). Copy the
-  `LICENSE` from the main repo before publishing.
+- License: GPL-3.0-or-later — see [`LICENSE`](LICENSE).
