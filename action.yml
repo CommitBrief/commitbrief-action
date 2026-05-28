@@ -1,0 +1,96 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# CommitBrief GitHub Action (composite). Consume from another repo with:
+#   uses: CommitBrief/commitbrief-action@v1
+# See README.md for inputs, permissions, and an example workflow.
+name: "CommitBrief Review"
+description: "LLM code review for a pull request — post inline review comments + a verdict, or gate CI on finding severity."
+author: "CommitBrief"
+branding:
+  icon: "git-pull-request"
+  color: "green"
+
+inputs:
+  version:
+    description: "commitbrief version to install via `go install` (e.g. v1.2.0, or 'latest')."
+    default: "latest"
+  provider:
+    description: "LLM provider: anthropic | openai | gemini | deepseek | mistral | cohere | ollama."
+    required: true
+  api-key:
+    description: "API key for the provider (pass a repository secret). Leave empty for ollama."
+    required: false
+    default: ""
+  model:
+    description: "Model override (optional; defaults to the provider's default)."
+    required: false
+    default: ""
+  mode:
+    description: "comment = post inline review comments + a verdict (uses `commitbrief remote pr`); gate = exit-code gate only (uses `commitbrief diff --fail-on`)."
+    default: "comment"
+  request-changes-on:
+    description: "comment mode: severity at or above which the GitHub verdict becomes request-changes (critical|high|medium|low)."
+    default: "critical"
+  fail-on:
+    description: "gate mode: fail the job if a finding meets/exceeds this severity (critical|high|medium|low|info|any)."
+    default: "high"
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version: "stable"
+
+    - name: Install commitbrief
+      shell: bash
+      env:
+        CB_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        go install "github.com/CommitBrief/commitbrief/cmd/commitbrief@${CB_VERSION}"
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+    - name: Review pull request
+      shell: bash
+      env:
+        # github.token needs `pull-requests: write` in comment mode (gh posts
+        # the review). Inputs are passed as env (not interpolated into the
+        # script body) to avoid shell-injection.
+        GH_TOKEN: ${{ github.token }}
+        CB_PROVIDER: ${{ inputs.provider }}
+        CB_API_KEY: ${{ inputs.api-key }}
+        CB_MODEL: ${{ inputs.model }}
+        CB_MODE: ${{ inputs.mode }}
+        CB_RCO: ${{ inputs.request-changes-on }}
+        CB_FAILON: ${{ inputs.fail-on }}
+        CB_PR: ${{ github.event.pull_request.number }}
+        CB_BASE: ${{ github.event.pull_request.base.sha }}
+        CB_HEAD: ${{ github.event.pull_request.head.sha }}
+      run: |
+        set -euo pipefail
+
+        # Map the key to the provider-specific env var commitbrief reads.
+        case "$CB_PROVIDER" in
+          anthropic) export ANTHROPIC_API_KEY="$CB_API_KEY" ;;
+          openai)    export OPENAI_API_KEY="$CB_API_KEY" ;;
+          gemini)    export GEMINI_API_KEY="$CB_API_KEY" ;;
+          deepseek)  export DEEPSEEK_API_KEY="$CB_API_KEY" ;;
+          mistral)   export MISTRAL_API_KEY="$CB_API_KEY" ;;
+          cohere)    export COHERE_API_KEY="$CB_API_KEY" ;;
+          ollama)    : ;;
+          *) echo "::error::unknown provider '$CB_PROVIDER'"; exit 1 ;;
+        esac
+        export COMMITBRIEF_PROVIDER="$CB_PROVIDER"
+        if [ -n "$CB_MODEL" ]; then export COMMITBRIEF_MODEL="$CB_MODEL"; fi
+
+        if [ -z "${CB_PR:-}" ]; then
+          echo "::error::no pull_request in context — run this action on a pull_request event."
+          exit 1
+        fi
+
+        if [ "$CB_MODE" = "comment" ]; then
+          commitbrief remote pr "$CB_PR" --request-changes-on="$CB_RCO"
+        else
+          commitbrief diff "$CB_BASE...$CB_HEAD" --fail-on="$CB_FAILON"
+        fi
