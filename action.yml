@@ -29,8 +29,8 @@ inputs:
     description: "comment = post inline review comments + a verdict (uses `commitbrief remote pr`); gate = exit-code gate only (uses `commitbrief diff --fail-on`)."
     default: "comment"
   request-changes-on:
-    description: "comment mode: severity at or above which the GitHub verdict becomes request-changes (critical|high|medium|low)."
-    default: "critical"
+    description: "comment mode: severity at or above which the GitHub verdict becomes request-changes (critical|high|medium|low). Leave empty (the default) to never request changes — the verdict is approve or comment only. Matches the CLI's opt-in behavior since v1.5.0 (ADR-0016 §5)."
+    default: ""
   fail-on:
     description: "gate mode: fail the job if a finding meets/exceeds this severity (critical|high|medium|low|info|any)."
     default: "high"
@@ -90,7 +90,14 @@ runs:
         fi
 
         if [ "$CB_MODE" = "comment" ]; then
-          commitbrief remote pr "$CB_PR" --request-changes-on="$CB_RCO"
+          # --request-changes-on is opt-in (ADR-0016 §5): passing it with an
+          # empty value would still enable the verdict, so omit it entirely
+          # when the input is blank.
+          if [ -n "$CB_RCO" ]; then
+            commitbrief remote pr "$CB_PR" --request-changes-on="$CB_RCO"
+          else
+            commitbrief remote pr "$CB_PR"
+          fi
         else
           commitbrief diff "$CB_BASE...$CB_HEAD" --fail-on="$CB_FAILON"
         fi

@@ -56,7 +56,7 @@ Gate mode (pass/fail only, no comments, no `pull-requests: write` needed):
 | `api-key` | `""` | Provider API key — pass a repository secret. Not needed for `ollama`. |
 | `model` | `""` | Model override; defaults to the provider's default. |
 | `mode` | `comment` | `comment` (inline comments + verdict) or `gate` (exit-code gate). |
-| `request-changes-on` | `critical` | comment mode: severity at/above which the verdict is request-changes. |
+| `request-changes-on` | `""` | comment mode: severity at/above which the verdict is request-changes. Empty = never request changes (approve/comment only). This matches CLI v1.5.0+ behavior; earlier versions of this action forced `critical`. |
 | `fail-on` | `high` | gate mode: fail the job if a finding meets/exceeds this severity. |
 | `version` | `latest` | commitbrief version to install (`go install` ref, e.g. `v1.2.0`). |
 
