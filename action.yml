@@ -12,7 +12,7 @@ branding:
 
 inputs:
   version:
-    description: "commitbrief version to install via `go install` (e.g. v1.2.0, or 'latest')."
+    description: "commitbrief version to install via `go install` (e.g. v1.13.0, or 'latest')."
     default: "latest"
   provider:
     description: "LLM provider: anthropic | openai | gemini | deepseek | mistral | cohere | ollama."
@@ -26,7 +26,7 @@ inputs:
     required: false
     default: ""
   mode:
-    description: "comment = post inline review comments + a verdict (uses `commitbrief remote pr`); gate = exit-code gate only (uses `commitbrief diff --fail-on`)."
+    description: "comment = post inline review comments + a verdict (uses `commitbrief remote pr`); gate = exit-code gate only (uses `commitbrief diff --fail-on`); guard = declarative policy gate (uses `commitbrief guard`, requires CLI v1.10.0+)."
     default: "comment"
   request-changes-on:
     description: "comment mode: severity at or above which the GitHub verdict becomes request-changes (critical|high|medium|low). Leave empty (the default) to never request changes — the verdict is approve or comment only. Matches the CLI's opt-in behavior since v1.5.0 (ADR-0016 §5)."
@@ -34,6 +34,10 @@ inputs:
   fail-on:
     description: "gate mode: fail the job if a finding meets/exceeds this severity (critical|high|medium|low|info|any)."
     default: "high"
+  policy:
+    description: "guard mode: path to the policy file, relative to the repo root."
+    required: false
+    default: ".commitbrief/policy.yml"
 
 runs:
   using: "composite"
@@ -64,6 +68,7 @@ runs:
         CB_MODE: ${{ inputs.mode }}
         CB_RCO: ${{ inputs.request-changes-on }}
         CB_FAILON: ${{ inputs.fail-on }}
+        CB_POLICY: ${{ inputs.policy }}
         CB_PR: ${{ github.event.pull_request.number }}
         CB_BASE: ${{ github.event.pull_request.base.sha }}
         CB_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -89,15 +94,25 @@ runs:
           exit 1
         fi
 
-        if [ "$CB_MODE" = "comment" ]; then
-          # --request-changes-on is opt-in (ADR-0016 §5): passing it with an
-          # empty value would still enable the verdict, so omit it entirely
-          # when the input is blank.
-          if [ -n "$CB_RCO" ]; then
-            commitbrief remote pr "$CB_PR" --request-changes-on="$CB_RCO"
-          else
-            commitbrief remote pr "$CB_PR"
-          fi
-        else
-          commitbrief diff "$CB_BASE...$CB_HEAD" --fail-on="$CB_FAILON"
-        fi
+        case "$CB_MODE" in
+          comment)
+            # --request-changes-on is opt-in (ADR-0016 §5): passing it with an
+            # empty value would still enable the verdict, so omit it entirely
+            # when the input is blank.
+            if [ -n "$CB_RCO" ]; then
+              commitbrief remote pr "$CB_PR" --request-changes-on="$CB_RCO"
+            else
+              commitbrief remote pr "$CB_PR"
+            fi
+            ;;
+          gate)
+            commitbrief diff "$CB_BASE...$CB_HEAD" --fail-on="$CB_FAILON"
+            ;;
+          guard)
+            commitbrief guard --diff "$CB_BASE...$CB_HEAD" --policy "$CB_POLICY"
+            ;;
+          *)
+            echo "::error::unknown mode '$CB_MODE' (expected comment|gate|guard)"
+            exit 1
+            ;;
+        esac
