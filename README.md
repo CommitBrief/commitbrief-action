@@ -25,7 +25,9 @@ The action installs the CLI with `go install` at the version you pin (see
 
 ## Quick start
 
-Add a workflow to the consuming repo, e.g. `.github/workflows/commitbrief.yml`:
+Add a workflow to the consuming repo, e.g. `.github/workflows/commitbrief.yml`.
+`version` defaults to `latest`; pin it, because a new CLI release can change
+gate behaviour:
 
 ```yaml
 name: CommitBrief
@@ -44,6 +46,7 @@ jobs:
         with:
           provider: anthropic
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          version: v1.17.1
           # mode: comment            # default
           # request-changes-on: high # default: "" (never request changes)
 ```
@@ -55,6 +58,7 @@ Gate mode (pass/fail only, no comments, no `pull-requests: write` needed):
         with:
           provider: openai
           api-key: ${{ secrets.OPENAI_API_KEY }}
+          version: v1.17.1
           mode: gate
           fail-on: high
 ```
@@ -67,6 +71,7 @@ needed — Requires CLI v1.10.0 or later):
         with:
           provider: anthropic
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          version: v1.17.1
           mode: guard
           policy: .commitbrief/policy.yml   # default; commit this file to the repo
 ```
@@ -82,7 +87,7 @@ needed — Requires CLI v1.10.0 or later):
 | `request-changes-on` | `""` | comment mode: severity at/above which the verdict is request-changes. Requires CLI v1.5.0 or later to leave this empty (never request changes — approve/comment only); earlier versions of this action defaulted this input to `critical` instead. |
 | `fail-on` | `high` | gate mode: fail the job if a finding meets/exceeds this severity. |
 | `policy` | `.commitbrief/policy.yml` | guard mode: path to the policy file, relative to the repo root. |
-| `version` | `latest` | commitbrief version to install (`go install` ref, e.g. `v1.13.0`). |
+| `version` | `latest` | commitbrief version to install (`go install` ref, e.g. `v1.17.1`). |
 
 ## Permissions
 
