@@ -12,7 +12,7 @@ branding:
 
 inputs:
   version:
-    description: "commitbrief version to install via `go install` (e.g. v1.13.0, or 'latest')."
+    description: "commitbrief version to install via `go install` (e.g. `v1.13.0`, or 'latest')."
     default: "latest"
   provider:
     description: "LLM provider: anthropic | openai | gemini | deepseek | mistral | cohere | ollama."
@@ -26,10 +26,10 @@ inputs:
     required: false
     default: ""
   mode:
-    description: "comment = post inline review comments + a verdict (uses `commitbrief remote pr`); gate = exit-code gate only (uses `commitbrief diff --fail-on`); guard = declarative policy gate (uses `commitbrief guard`, requires CLI v1.10.0+)."
+    description: "comment = post inline review comments + a verdict (uses `commitbrief remote pr`); gate = exit-code gate only (uses `commitbrief diff --fail-on`); guard = declarative policy gate (uses `commitbrief guard`; Requires CLI v1.10.0 or later)."
     default: "comment"
   request-changes-on:
-    description: "comment mode: severity at or above which the GitHub verdict becomes request-changes (critical|high|medium|low). Leave empty (the default) to never request changes — the verdict is approve or comment only. Matches the CLI's opt-in behavior since v1.5.0 (ADR-0016 §5)."
+    description: "comment mode: severity at or above which the GitHub verdict becomes request-changes (critical|high|medium|low). Requires CLI v1.5.0 or later to leave this empty and never request changes (the default) — the verdict is approve or comment only."
     default: ""
   fail-on:
     description: "gate mode: fail the job if a finding meets/exceeds this severity (critical|high|medium|low|info|any)."

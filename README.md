@@ -16,9 +16,9 @@ Minimum CLI version by mode:
 
 | mode | needs CLI |
 |------|-----------|
-| `gate` | v0.9.0+ (the `diff` subcommand) |
-| `comment` | v1.1.0+ (`remote pr`) |
-| `guard` | **v1.10.0+** (`commitbrief guard`) |
+| `gate` | Requires v0.9.0 or later (the `diff` subcommand) |
+| `comment` | Requires v1.1.0 or later (`remote pr`) |
+| `guard` | **Requires v1.10.0 or later** (`commitbrief guard`) |
 
 The action installs the CLI with `go install` at the version you pin (see
 `version` below).
@@ -60,7 +60,7 @@ Gate mode (pass/fail only, no comments, no `pull-requests: write` needed):
 ```
 
 Guard mode (declarative policy gate, no comments, no `pull-requests: write`
-needed — requires CLI v1.10.0+):
+needed — Requires CLI v1.10.0 or later):
 
 ```yaml
       - uses: CommitBrief/commitbrief-action@v1
@@ -79,7 +79,7 @@ needed — requires CLI v1.10.0+):
 | `api-key` | `""` | Provider API key — pass a repository secret. Not needed for `ollama`. |
 | `model` | `""` | Model override; defaults to the provider's default. |
 | `mode` | `comment` | `comment` (inline comments + verdict), `gate` (exit-code gate), or `guard` (declarative policy gate). |
-| `request-changes-on` | `""` | comment mode: severity at/above which the verdict is request-changes. Empty = never request changes (approve/comment only). This matches CLI v1.5.0+ behavior; earlier versions of this action forced `critical`. |
+| `request-changes-on` | `""` | comment mode: severity at/above which the verdict is request-changes. Requires CLI v1.5.0 or later to leave this empty (never request changes — approve/comment only); earlier versions of this action defaulted this input to `critical` instead. |
 | `fail-on` | `high` | gate mode: fail the job if a finding meets/exceeds this severity. |
 | `policy` | `.commitbrief/policy.yml` | guard mode: path to the policy file, relative to the repo root. |
 | `version` | `latest` | commitbrief version to install (`go install` ref, e.g. `v1.13.0`). |
