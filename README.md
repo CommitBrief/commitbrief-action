@@ -45,7 +45,7 @@ jobs:
           provider: anthropic
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           # mode: comment            # default
-          # request-changes-on: high # default: critical
+          # request-changes-on: high # default: "" (never request changes)
 ```
 
 Gate mode (pass/fail only, no comments, no `pull-requests: write` needed):
