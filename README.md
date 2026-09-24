@@ -20,14 +20,22 @@ Minimum CLI version by mode:
 | `comment` | Requires v1.1.0 or later (`remote pr`) |
 | `guard` | **Requires v1.10.0 or later** (`commitbrief guard`) |
 
-The action installs the CLI with `go install` at the version you pin (see
-`version` below).
+The action installs the prebuilt CLI binary from the matching GitHub
+release and verifies its SHA-256 against that release's `checksums.txt`
+before putting it on `PATH`, so there is no Go toolchain setup and no
+compile step. A download or checksum failure fails the job; it never falls
+back to a source build. The check proves integrity (the archive is exactly
+the one the release lists), not provenance: `checksums.txt` is unsigned and
+comes from the same release. Linux, macOS and Windows runners on x64 or
+ARM64 are covered; any other runner, or a `version` that is a branch or
+commit SHA, builds from source with `go install` and logs a warning.
 
 ## Quick start
 
 Add a workflow to the consuming repo, e.g. `.github/workflows/commitbrief.yml`.
-`version` defaults to `latest`; pin it, because a new CLI release can change
-gate behaviour:
+`version` defaults to the CLI release this action tag was cut against, so
+`@v1` alone is reproducible between action updates. Pin it explicitly when
+you want to control upgrades yourself:
 
 ```yaml
 name: CommitBrief
@@ -87,7 +95,7 @@ needed — Requires CLI v1.10.0 or later):
 | `request-changes-on` | `""` | comment mode: severity at/above which the verdict is request-changes. Requires CLI v1.5.0 or later to leave this empty (never request changes — approve/comment only); earlier versions of this action defaulted this input to `critical` instead. |
 | `fail-on` | `high` | gate mode: fail the job if a finding meets/exceeds this severity. |
 | `policy` | `.commitbrief/policy.yml` | guard mode: path to the policy file, relative to the repo root. |
-| `version` | `latest` | commitbrief version to install (`go install` ref, e.g. `v1.17.1`). |
+| `version` | current release tag | commitbrief version to install, e.g. `v1.17.1`. A release tag installs the checksum-verified prebuilt binary; `latest` resolves to the newest stable release on every run; a branch or commit SHA builds from source with `go install`. |
 
 ## Permissions
 
@@ -101,6 +109,7 @@ needed — Requires CLI v1.10.0 or later):
   weaker models degrade to plain text (handled gracefully). CLI-tool
   providers (`claude-cli` / `gemini-cli`) are **not** usable here — they
   need a local authenticated CLI, which isn't available in CI.
-- Pin `version:` to a released tag for reproducible CI; `latest` tracks the
-  newest release.
+- The default `version` moves only when the `v1` tag of this action moves.
+  `latest` asks the GitHub releases API on every run and can change the CLI
+  between two runs of the same workflow; use it only if you want that.
 - License: GPL-3.0-or-later — see [`LICENSE`](LICENSE).

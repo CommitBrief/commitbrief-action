@@ -1,0 +1,174 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Self-test for the action's CLI install step (scripts/install.sh, ADR-0044).
+# Proves on every runner OS that:
+#   - the default `version` installs the prebuilt, SHA-256-verified binary and
+#     `commitbrief --version` reports that tag;
+#   - a corrupted checksums manifest fails the install (no source fallback);
+#   - `latest` resolves through the releases API;
+#   - a non-release ref takes the go install fallback.
+# The action is invoked with an unknown provider, so the review step exits
+# before it runs anything: no provider call, no secret, no PR needed.
+name: test-install
+
+on:
+  pull_request:
+    paths:
+      - action.yml
+      - scripts/**
+      - .github/workflows/test-install.yml
+  push:
+    branches: [main]
+    paths:
+      - action.yml
+      - scripts/**
+      - .github/workflows/test-install.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prebuilt:
+    name: prebuilt (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the default version from action.yml
+        id: default
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=$(awk '
+            /^  version:/ { inblock = 1; next }
+            inblock && /^  [^ ]/ { inblock = 0 }
+            inblock && /^    default:/ { gsub(/"/, "", $2); print $2; exit }
+          ' action.yml)
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::unexpected default version '$tag'"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Corrupted checksums.txt must fail the install
+        shell: bash
+        env:
+          TAG: ${{ steps.default.outputs.tag }}
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/negative"
+          mkdir -p "$scratch/temp"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$scratch/checksums.txt" \
+            "https://github.com/CommitBrief/commitbrief/releases/download/${TAG}/checksums.txt"
+          # Replace every digest with 64 zeros, keep the asset names.
+          sed -E 's/^[0-9a-fA-F]{64}/0000000000000000000000000000000000000000000000000000000000000000/' \
+            "$scratch/checksums.txt" > "$scratch/bad-checksums.txt"
+          : > "$scratch/path"
+          : > "$scratch/output"
+          set +e
+          RUNNER_TEMP="$scratch/temp" GITHUB_PATH="$scratch/path" GITHUB_OUTPUT="$scratch/output" \
+            CB_VERSION="$TAG" CB_TEST_CHECKSUMS_FILE="$scratch/bad-checksums.txt" \
+            bash scripts/install.sh
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::install.sh succeeded with a corrupted checksums manifest"
+            exit 1
+          fi
+          if [ -s "$scratch/path" ] || [ -s "$scratch/output" ]; then
+            echo "::error::install.sh touched GITHUB_PATH or GITHUB_OUTPUT after a checksum mismatch"
+            exit 1
+          fi
+          if ls "$scratch/temp/commitbrief-bin/"commitbrief* >/dev/null 2>&1; then
+            echo "::error::install.sh left a binary behind after a checksum mismatch"
+            exit 1
+          fi
+          echo "Corrupted manifest rejected (exit $rc)."
+
+      - name: Run the action with its default version
+        id: action
+        continue-on-error: true
+        uses: ./
+        with:
+          provider: selftest-no-provider
+
+      - name: The review step must be the only failure
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          # The unknown provider makes the review step fail on purpose; the
+          # install steps before it must still have run.
+          [ "$OUTCOME" = "failure" ] || { echo "::error::expected the review step to fail, got '$OUTCOME'"; exit 1; }
+
+      - name: Installed binary reports the pinned tag
+        shell: bash
+        env:
+          TAG: ${{ steps.default.outputs.tag }}
+        run: |
+          set -euo pipefail
+          got=$(commitbrief --version)
+          echo "$got"
+          case "$got" in
+            "commitbrief ${TAG#v} "*) ;;
+            *) echo "::error::expected 'commitbrief ${TAG#v} ...', got '$got'"; exit 1 ;;
+          esac
+          where=$(command -v commitbrief)
+          case "$where" in
+            *commitbrief-bin*) ;;
+            *) echo "::error::commitbrief resolved to '$where', not the prebuilt install dir"; exit 1 ;;
+          esac
+
+  latest:
+    name: latest (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install with version latest
+        shell: bash
+        env:
+          CB_VERSION: latest
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/latest-output"
+          : > "$out"
+          GITHUB_OUTPUT="$out" bash scripts/install.sh
+          grep -qx 'method=prebuilt' "$out"
+          grep -qE '^ref=v[0-9]+\.[0-9]+\.[0-9]+$' "$out"
+
+      - name: Installed binary is on PATH
+        shell: bash
+        run: commitbrief --version
+
+  source-fallback:
+    name: source fallback (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the action with a branch ref
+        id: action
+        continue-on-error: true
+        uses: ./
+        with:
+          version: main
+          provider: selftest-no-provider
+
+      - name: Binary came from go install
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          set -euo pipefail
+          [ "$OUTCOME" = "failure" ] || { echo "::error::expected the review step to fail, got '$OUTCOME'"; exit 1; }
+          where=$(command -v commitbrief)
+          echo "$where"
+          case "$where" in
+            "$(go env GOPATH)/bin/"*) ;;
+            *) echo "::error::expected a go install binary, got '$where'"; exit 1 ;;
+          esac
+          commitbrief --version

@@ -12,8 +12,8 @@ branding:
 
 inputs:
   version:
-    description: "commitbrief version to install via `go install` (e.g. `v1.13.0`, or 'latest')."
-    default: "latest"
+    description: "commitbrief CLI version to install. A release tag installs the prebuilt release binary, SHA-256-verified against the release's checksums.txt (integrity, not provenance: the manifest is unsigned). The default is the current release tag and is bumped by the CLI's release automation, so it moves only when the `v1` tag of this action is re-cut. `latest` resolves to the newest stable release on every run, so the CLI can change between two runs of the same workflow. A branch or commit SHA builds from source with `go install`, slower and unverified."
+    default: "v1.17.1"
   provider:
     description: "LLM provider: anthropic | openai | gemini | deepseek | mistral | cohere | ollama."
     required: true
@@ -42,18 +42,35 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-go@v5
-      with:
-        go-version: "stable"
-
+    # Release tag (or `latest`) -> download the prebuilt binary, verify it
+    # against checksums.txt, put it on PATH (scripts/install.sh, ADR-0044).
+    # Any other ref -> the script sets method=source and the two steps below
+    # build it with go install. A download or checksum failure fails here and
+    # never falls back to a source build.
     - name: Install commitbrief
+      id: install
       shell: bash
       env:
         CB_VERSION: ${{ inputs.version }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/install.sh"
+
+    - name: Set up Go (source build)
+      if: steps.install.outputs.method == 'source'
+      uses: actions/setup-go@v5
+      with:
+        go-version: "stable"
+
+    - name: Install commitbrief from source
+      if: steps.install.outputs.method == 'source'
+      shell: bash
+      env:
+        CB_REF: ${{ steps.install.outputs.ref }}
       run: |
         set -euo pipefail
-        go install "github.com/CommitBrief/commitbrief/cmd/commitbrief@${CB_VERSION}"
+        go install "github.com/CommitBrief/commitbrief/cmd/commitbrief@${CB_REF}"
         echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+        "$(go env GOPATH)/bin/commitbrief" --version
 
     - name: Review pull request
       shell: bash
