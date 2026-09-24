@@ -13,7 +13,7 @@ branding:
 inputs:
   version:
     description: "commitbrief CLI version to install. A release tag installs the prebuilt release binary, SHA-256-verified against the release's checksums.txt (integrity, not provenance: the manifest is unsigned). The default is the current release tag and is bumped by the CLI's release automation, so it moves only when the `v1` tag of this action is re-cut. `latest` resolves to the newest stable release on every run, so the CLI can change between two runs of the same workflow. A branch or commit SHA builds from source with `go install`, slower and unverified."
-    default: "v1.17.1"
+    default: "v1.18.0"
   provider:
     description: "LLM provider: anthropic | openai | gemini | deepseek | mistral | cohere | ollama."
     required: true
