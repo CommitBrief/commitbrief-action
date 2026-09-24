@@ -190,10 +190,23 @@ jobs:
           # would fail with 401. On a non-github.com server it must go
           # anonymous. Set inline: a step's env: cannot override the runner's
           # GITHUB_* defaults, GITHUB_SERVER_URL included.
-          CB_VERSION=latest GITHUB_TOKEN=not-a-github-com-token \
+          #
+          # The anonymous lookup shares the runner IP's 60 req/h limit. When it
+          # fails, install.sh names the unauthenticated path in its error; that
+          # still proves the token stayed home, so pass with a warning instead
+          # of a red check unrelated to the change.
+          if ! CB_VERSION=latest GITHUB_TOKEN=not-a-github-com-token \
             GITHUB_SERVER_URL=https://ghes.example.invalid \
             RUNNER_TEMP="$scratch/temp" GITHUB_PATH="$scratch/path" GITHUB_OUTPUT="$scratch/output" \
-            bash scripts/install.sh
+            bash scripts/install.sh 2>"$scratch/stderr"; then
+            cat "$scratch/stderr" >&2
+            if grep -q '(unauthenticated; the API rate limit may apply)' "$scratch/stderr"; then
+              echo "::warning::anonymous releases API lookup failed (likely rate limit); the token was not sent"
+              exit 0
+            fi
+            exit 1
+          fi
+          cat "$scratch/stderr" >&2
           grep -qx 'method=prebuilt' "$scratch/output"
 
   source-fallback:
