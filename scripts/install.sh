@@ -30,13 +30,15 @@
 #
 # Environment:
 #   CB_VERSION              required; the action's `version` input
-#   GITHUB_TOKEN            optional; authenticates the `latest` lookup
+#   GITHUB_TOKEN            optional; authenticates the `latest` lookup, and
+#                           is only sent when GITHUB_SERVER_URL is github.com
+#   GITHUB_SERVER_URL       set by the runner; anything other than
+#                           https://github.com (GitHub Enterprise Server)
+#                           makes the `latest` lookup anonymous, so a GHES
+#                           token never reaches api.github.com
 #   RUNNER_OS, RUNNER_ARCH  set by the runner
 #   RUNNER_TEMP, GITHUB_PATH required; set by the runner
 #   GITHUB_OUTPUT           optional; receives method= and ref=
-#   CB_TEST_CHECKSUMS_FILE  self-test only: a local checksums manifest used
-#                           instead of the release's checksums.txt, so the
-#                           self-test can prove a corrupted manifest fails.
 
 set -euo pipefail
 
@@ -47,6 +49,9 @@ readonly RELEASE_RE='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
 readonly STABLE_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
 readonly SOURCE_REF_RE='^[0-9A-Za-z][0-9A-Za-z._/-]*$'
 readonly SHA256_RE='^[0-9a-f]{64}$'
+# Every request, and every redirect it follows, is HTTPS with TLS >= 1.2.
+CURL_OPTS=(-fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 --retry-delay 2)
+readonly CURL_OPTS
 
 # Workflow commands are read from stderr as well as stdout. stderr keeps the
 # message visible when fail runs inside a $(...) capture.
@@ -75,20 +80,31 @@ source_fallback() {
 
 # fetch <url> <dest> — HTTPS only, fails on any non-2xx response.
 fetch() {
-  curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-delay 2 -o "$2" "$1"
+  curl "${CURL_OPTS[@]}" -o "$2" "$1"
+}
+
+# latest_token — the token to send to api.github.com, or nothing. On GitHub
+# Enterprise Server the job token belongs to the GHES instance: sending it to
+# github.com would leak a credential to another service and fail with 401.
+latest_token() {
+  local server=${GITHUB_SERVER_URL:-https://github.com}
+  if [ "${server%/}" = "https://github.com" ]; then
+    printf '%s' "${GITHUB_TOKEN:-}"
+  fi
 }
 
 resolve_latest() {
-  local json tag
-  if [ -n "${GITHUB_TOKEN:-}" ]; then
+  local json tag token
+  token=$(latest_token)
+  if [ -n "$token" ]; then
     # Header via --config on stdin keeps the token out of the process list.
-    json=$(printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" |
-      curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-delay 2 --config - \
+    json=$(printf 'header = "Authorization: Bearer %s"\n' "$token" |
+      curl "${CURL_OPTS[@]}" --config - \
         -H 'Accept: application/vnd.github+json' \
         -H 'X-GitHub-Api-Version: 2022-11-28' \
         "$API_LATEST") || fail "could not resolve 'latest' from $API_LATEST"
   else
-    json=$(curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-delay 2 \
+    json=$(curl "${CURL_OPTS[@]}" \
       -H 'Accept: application/vnd.github+json' \
       -H 'X-GitHub-Api-Version: 2022-11-28' \
       "$API_LATEST") || fail "could not resolve 'latest' from $API_LATEST (unauthenticated; the API rate limit may apply)"
@@ -180,13 +196,8 @@ echo "Downloading ${asset} (${tag})."
 fetch "${DOWNLOAD_BASE}/${tag}/${asset}" "${work}/${asset}" ||
   fail "could not download ${asset} from release ${tag}. The tag may not exist or may have no asset for this platform; pin a newer release tag, or a branch or commit SHA to build from source."
 
-if [ -n "${CB_TEST_CHECKSUMS_FILE:-}" ]; then
-  echo "::warning::commitbrief install: using CB_TEST_CHECKSUMS_FILE instead of the release's checksums.txt (self-test only)."
-  cp "$CB_TEST_CHECKSUMS_FILE" "${work}/checksums.txt"
-else
-  fetch "${DOWNLOAD_BASE}/${tag}/checksums.txt" "${work}/checksums.txt" ||
-    fail "could not download checksums.txt from release ${tag}; refusing to install an unverified binary."
-fi
+fetch "${DOWNLOAD_BASE}/${tag}/checksums.txt" "${work}/checksums.txt" ||
+  fail "could not download checksums.txt from release ${tag}; refusing to install an unverified binary."
 
 # ----------------------------------------------------------------- 4. verify
 

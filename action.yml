@@ -52,7 +52,10 @@ runs:
       shell: bash
       env:
         CB_VERSION: ${{ inputs.version }}
-        GITHUB_TOKEN: ${{ github.token }}
+        # Only used to resolve `latest` against api.github.com; withheld on
+        # GitHub Enterprise Server, where the job token is not a github.com
+        # credential (install.sh also checks GITHUB_SERVER_URL).
+        GITHUB_TOKEN: ${{ github.server_url == 'https://github.com' && github.token || '' }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/install.sh"
 
     - name: Set up Go (source build)

@@ -4,8 +4,11 @@
 # Proves on every runner OS that:
 #   - the default `version` installs the prebuilt, SHA-256-verified binary and
 #     `commitbrief --version` reports that tag;
-#   - a corrupted checksums manifest fails the install (no source fallback);
-#   - `latest` resolves through the releases API;
+#   - a corrupted checksums manifest fails the install with a checksum
+#     mismatch (no source fallback), injected through a curl shim so the
+#     script itself carries no test hook;
+#   - `latest` resolves through the releases API, and a non-github.com
+#     GITHUB_SERVER_URL (GHES) keeps the job token out of that request;
 #   - a non-release ref takes the go install fallback.
 # The action is invoked with an unknown provider, so the review step exits
 # before it runs anything: no provider call, no secret, no PR needed.
@@ -59,22 +62,51 @@ jobs:
         run: |
           set -euo pipefail
           scratch="$RUNNER_TEMP/negative"
-          mkdir -p "$scratch/temp"
-          curl -fsSL --proto '=https' --tlsv1.2 -o "$scratch/checksums.txt" \
-            "https://github.com/CommitBrief/commitbrief/releases/download/${TAG}/checksums.txt"
-          # Replace every digest with 64 zeros, keep the asset names.
-          sed -E 's/^[0-9a-fA-F]{64}/0000000000000000000000000000000000000000000000000000000000000000/' \
-            "$scratch/checksums.txt" > "$scratch/bad-checksums.txt"
+          mkdir -p "$scratch/temp" "$scratch/shim"
+          # A curl shim ahead of the real curl on PATH: it runs the real
+          # download, then zeroes every digest in any checksums.txt it wrote.
+          # install.sh itself has no test hook; it sees a real-looking manifest.
+          REAL_CURL=$(command -v curl)
+          export REAL_CURL
+          export SHIM_MARKER="$scratch/shim-hit"
+          cat > "$scratch/shim/curl" <<'SHIM'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          "$REAL_CURL" "$@"
+          dest="" prev=""
+          for arg in "$@"; do
+            if [ "$prev" = "-o" ]; then dest=$arg; fi
+            prev=$arg
+          done
+          case "$dest" in
+            */checksums.txt)
+              sed -E 's/^[0-9a-fA-F]{64}/0000000000000000000000000000000000000000000000000000000000000000/' \
+                "$dest" > "$dest.corrupt"
+              mv "$dest.corrupt" "$dest"
+              : > "$SHIM_MARKER"
+              ;;
+          esac
+          SHIM
+          chmod +x "$scratch/shim/curl"
           : > "$scratch/path"
           : > "$scratch/output"
           set +e
-          RUNNER_TEMP="$scratch/temp" GITHUB_PATH="$scratch/path" GITHUB_OUTPUT="$scratch/output" \
-            CB_VERSION="$TAG" CB_TEST_CHECKSUMS_FILE="$scratch/bad-checksums.txt" \
-            bash scripts/install.sh
+          PATH="$scratch/shim:$PATH" RUNNER_TEMP="$scratch/temp" \
+            GITHUB_PATH="$scratch/path" GITHUB_OUTPUT="$scratch/output" CB_VERSION="$TAG" \
+            bash scripts/install.sh > "$scratch/log" 2>&1
           rc=$?
           set -e
+          cat "$scratch/log"
+          if [ ! -e "$SHIM_MARKER" ]; then
+            echo "::error::the curl shim never rewrote checksums.txt; the negative test did not exercise verification"
+            exit 1
+          fi
           if [ "$rc" -eq 0 ]; then
             echo "::error::install.sh succeeded with a corrupted checksums manifest"
+            exit 1
+          fi
+          if ! grep -q 'checksum mismatch for ' "$scratch/log"; then
+            echo "::error::install.sh failed (exit $rc), but not with a checksum mismatch"
             exit 1
           fi
           if [ -s "$scratch/path" ] || [ -s "$scratch/output" ]; then
@@ -85,7 +117,7 @@ jobs:
             echo "::error::install.sh left a binary behind after a checksum mismatch"
             exit 1
           fi
-          echo "Corrupted manifest rejected (exit $rc)."
+          echo "Corrupted manifest rejected with a checksum mismatch (exit $rc)."
 
       - name: Run the action with its default version
         id: action
@@ -94,14 +126,22 @@ jobs:
         with:
           provider: selftest-no-provider
 
-      - name: The review step must be the only failure
+      - name: Install succeeded, then the review step failed on purpose
         shell: bash
         env:
           OUTCOME: ${{ steps.action.outcome }}
         run: |
-          # The unknown provider makes the review step fail on purpose; the
-          # install steps before it must still have run.
+          set -euo pipefail
+          # The unknown provider makes the review step fail on purpose. The
+          # action's outcome alone cannot tell that apart from an install
+          # failure, so also require the prebuilt binary on PATH: install.sh
+          # only appends its directory to GITHUB_PATH after verification.
           [ "$OUTCOME" = "failure" ] || { echo "::error::expected the review step to fail, got '$OUTCOME'"; exit 1; }
+          where=$(command -v commitbrief) || { echo "::error::commitbrief is not on PATH: the install step failed"; exit 1; }
+          case "$where" in
+            *commitbrief-bin*) ;;
+            *) echo "::error::commitbrief resolved to '$where', not the prebuilt install dir"; exit 1 ;;
+          esac
 
       - name: Installed binary reports the pinned tag
         shell: bash
@@ -114,11 +154,6 @@ jobs:
           case "$got" in
             "commitbrief ${TAG#v} "*) ;;
             *) echo "::error::expected 'commitbrief ${TAG#v} ...', got '$got'"; exit 1 ;;
-          esac
-          where=$(command -v commitbrief)
-          case "$where" in
-            *commitbrief-bin*) ;;
-            *) echo "::error::commitbrief resolved to '$where', not the prebuilt install dir"; exit 1 ;;
           esac
 
   latest:
@@ -143,6 +178,23 @@ jobs:
       - name: Installed binary is on PATH
         shell: bash
         run: commitbrief --version
+
+      - name: GHES server URL keeps the token away from api.github.com
+        shell: bash
+        env:
+          CB_VERSION: latest
+          # A bogus token: if install.sh sent it to api.github.com the lookup
+          # would fail with 401. On a non-github.com server it must go anonymous.
+          GITHUB_TOKEN: not-a-github-com-token
+          GITHUB_SERVER_URL: https://ghes.example.invalid
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/ghes"
+          mkdir -p "$scratch/temp"
+          : > "$scratch/output"
+          RUNNER_TEMP="$scratch/temp" GITHUB_PATH="$scratch/path" GITHUB_OUTPUT="$scratch/output" \
+            bash scripts/install.sh
+          grep -qx 'method=prebuilt' "$scratch/output"
 
   source-fallback:
     name: source fallback (ubuntu-latest)
