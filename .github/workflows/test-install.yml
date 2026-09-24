@@ -181,18 +181,18 @@ jobs:
 
       - name: GHES server URL keeps the token away from api.github.com
         shell: bash
-        env:
-          CB_VERSION: latest
-          # A bogus token: if install.sh sent it to api.github.com the lookup
-          # would fail with 401. On a non-github.com server it must go anonymous.
-          GITHUB_TOKEN: not-a-github-com-token
-          GITHUB_SERVER_URL: https://ghes.example.invalid
         run: |
           set -euo pipefail
           scratch="$RUNNER_TEMP/ghes"
           mkdir -p "$scratch/temp"
           : > "$scratch/output"
-          RUNNER_TEMP="$scratch/temp" GITHUB_PATH="$scratch/path" GITHUB_OUTPUT="$scratch/output" \
+          # A bogus token: if install.sh sent it to api.github.com the lookup
+          # would fail with 401. On a non-github.com server it must go
+          # anonymous. Set inline: a step's env: cannot override the runner's
+          # GITHUB_* defaults, GITHUB_SERVER_URL included.
+          CB_VERSION=latest GITHUB_TOKEN=not-a-github-com-token \
+            GITHUB_SERVER_URL=https://ghes.example.invalid \
+            RUNNER_TEMP="$scratch/temp" GITHUB_PATH="$scratch/path" GITHUB_OUTPUT="$scratch/output" \
             bash scripts/install.sh
           grep -qx 'method=prebuilt' "$scratch/output"
 
