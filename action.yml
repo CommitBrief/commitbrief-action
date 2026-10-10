@@ -60,7 +60,7 @@ runs:
 
     - name: Set up Go (source build)
       if: steps.install.outputs.method == 'source'
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: "stable"
 
