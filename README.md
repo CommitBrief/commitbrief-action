@@ -19,6 +19,7 @@ Minimum CLI version by mode:
 | `gate` | Requires v0.9.0 or later (the `diff` subcommand) |
 | `comment` | Requires v1.1.0 or later (`remote pr`) |
 | `guard` | **Requires v1.10.0 or later** (`commitbrief guard`) |
+| `gate` + `sarif-upload` | **Requires v1.19.0 or later** (`--sarif`) |
 
 The action installs the prebuilt CLI binary from the matching GitHub
 release and verifies its SHA-256 against that release's `checksums.txt`
@@ -71,6 +72,39 @@ Gate mode (pass/fail only, no comments, no `pull-requests: write` needed):
           fail-on: high
 ```
 
+Gate mode with Code Scanning upload (Requires CLI v1.19.0 or later). Instead
+of printing the review to the job log, the action writes the findings as
+SARIF 2.1.0 and uploads them with `github/codeql-action/upload-sarif`. They
+appear as annotations and in the "Code scanning results" check on the pull
+request (the action only runs on `pull_request`, so nothing is uploaded for
+the default branch). The upload runs even when the gate fails the job. The
+workflow needs `security-events: write` (and `actions: read` in private
+repositories), and the job needs a checkout for the diff:
+
+```yaml
+permissions:
+  contents: read
+  security-events: write   # sarif-upload: true uploads to Code Scanning
+  actions: read            # private repositories only
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}   # not the merge commit: SARIF lines are head lines
+      - uses: CommitBrief/commitbrief-action@v1
+        with:
+          provider: openai
+          api-key: ${{ secrets.OPENAI_API_KEY }}
+          version: v1.19.0   # sarif-upload needs CLI v1.19.0 or later
+          mode: gate
+          fail-on: high
+          sarif-upload: true
+```
+
 Guard mode (declarative policy gate, no comments, no `pull-requests: write`
 needed — Requires CLI v1.10.0 or later):
 
@@ -95,6 +129,7 @@ needed — Requires CLI v1.10.0 or later):
 | `request-changes-on` | `""` | comment mode: severity at/above which the verdict is request-changes. Requires CLI v1.5.0 or later to leave this empty (never request changes — approve/comment only); earlier versions of this action defaulted this input to `critical` instead. |
 | `fail-on` | `high` | gate mode: fail the job if a finding meets/exceeds this severity. |
 | `policy` | `.commitbrief/policy.yml` | guard mode: path to the policy file, relative to the repo root. |
+| `sarif-upload` | `false` | gate mode: `true` writes SARIF 2.1.0 to a file (instead of printing the review to the log) and uploads it to Code Scanning. Requires CLI v1.19.0 or later and `permissions: security-events: write`. Ignored with a warning in `comment` and `guard` modes. |
 | `version` | current release tag | commitbrief version to install, e.g. `v1.18.1`. A release tag installs the checksum-verified prebuilt binary; `latest` resolves to the newest stable release on every run; a branch or commit SHA builds from source with `go install`. |
 
 ## Permissions
@@ -102,6 +137,12 @@ needed — Requires CLI v1.10.0 or later):
 - **comment mode** needs `permissions: pull-requests: write` — the action
   uses the workflow's `GITHUB_TOKEN` (via `gh`) to post the review.
 - **gate mode** and **guard mode** only need `contents: read`.
+- **gate mode with `sarif-upload: true`** additionally needs
+  `security-events: write` (and Code Scanning available for the repository).
+  Private and internal repositories also need GitHub Code Security enabled
+  and `actions: read`.
+  On pull requests from forks the token is read-only, so the upload fails
+  there.
 
 ## Notes
 

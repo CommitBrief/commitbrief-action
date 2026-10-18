@@ -38,6 +38,10 @@ inputs:
     description: "guard mode: path to the policy file, relative to the repo root."
     required: false
     default: ".commitbrief/policy.yml"
+  sarif-upload:
+    description: "gate mode: \"true\" writes the findings as SARIF 2.1.0 to a file instead of printing the review to the job log, and uploads that file to GitHub Code Scanning (needs `permissions: security-events: write`, plus `actions: read` in private repositories; Requires CLI v1.19.0 or later). \"false\" (the default) changes nothing. Ignored with a warning in comment and guard modes."
+    required: false
+    default: "false"
 
 runs:
   using: "composite"
@@ -76,6 +80,7 @@ runs:
         "$(go env GOPATH)/bin/commitbrief" --version
 
     - name: Review pull request
+      id: review
       shell: bash
       env:
         # github.token needs `pull-requests: write` in comment mode (gh posts
@@ -89,6 +94,7 @@ runs:
         CB_RCO: ${{ inputs.request-changes-on }}
         CB_FAILON: ${{ inputs.fail-on }}
         CB_POLICY: ${{ inputs.policy }}
+        CB_SARIF: ${{ inputs.sarif-upload }}
         CB_PR: ${{ github.event.pull_request.number }}
         CB_BASE: ${{ github.event.pull_request.base.sha }}
         CB_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -114,6 +120,12 @@ runs:
           exit 1
         fi
 
+        # sarif-upload only means something in gate mode: validate it there,
+        # and in every other mode just warn that it is ignored.
+        if [ "$CB_MODE" != "gate" ] && [ "$CB_SARIF" != "false" ]; then
+          echo "::warning::sarif-upload is only supported in gate mode; ignoring it in '$CB_MODE' mode."
+        fi
+
         case "$CB_MODE" in
           comment)
             # --request-changes-on is opt-in (ADR-0016 §5): passing it with an
@@ -126,7 +138,23 @@ runs:
             fi
             ;;
           gate)
-            commitbrief diff "$CB_BASE...$CB_HEAD" --fail-on="$CB_FAILON"
+            case "$CB_SARIF" in
+              true|false) ;;
+              *) echo "::error::invalid sarif-upload '$CB_SARIF' (expected true|false)"; exit 1 ;;
+            esac
+            if [ "$CB_SARIF" = "true" ]; then
+              sarif_file="$RUNNER_TEMP/commitbrief.sarif"
+              # The review renders the log before --fail-on decides the exit
+              # code, so a failing gate still leaves a file to upload. Publish
+              # its path on any exit, but only if a non-empty file exists: a
+              # run that errors out before rendering (fail-closed) must not
+              # hand an empty or stale log to Code Scanning.
+              rm -f "$sarif_file"
+              trap 'if [ -s "$sarif_file" ]; then echo "sarif-file=$sarif_file" >> "$GITHUB_OUTPUT"; fi' EXIT
+              commitbrief diff "$CB_BASE...$CB_HEAD" --fail-on="$CB_FAILON" --sarif --output "$sarif_file"
+            else
+              commitbrief diff "$CB_BASE...$CB_HEAD" --fail-on="$CB_FAILON"
+            fi
             ;;
           guard)
             commitbrief guard --diff "$CB_BASE...$CB_HEAD" --policy "$CB_POLICY"
@@ -136,3 +164,19 @@ runs:
             exit 1
             ;;
         esac
+
+    # gate mode + sarif-upload: send the log to Code Scanning, also when the
+    # gate failed the job (that is when the alerts matter). Skipped on cancel
+    # and when the review wrote no log. Pinned by commit SHA (v4.38.3, an
+    # annotated tag resolved to its commit).
+    - name: Upload SARIF to Code Scanning
+      if: ${{ !cancelled() && inputs.mode == 'gate' && inputs.sarif-upload == 'true' && steps.review.outputs.sarif-file != '' }}
+      uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+      with:
+        sarif_file: ${{ steps.review.outputs.sarif-file }}
+        category: commitbrief
+        # The CLI numbers lines against the PR head (base...head), while the
+        # defaults would attach them to the merge commit; point the upload at
+        # the head so annotations and line hashes match.
+        ref: refs/pull/${{ github.event.pull_request.number }}/head
+        sha: ${{ github.event.pull_request.head.sha }}
