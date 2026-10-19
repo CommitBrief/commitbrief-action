@@ -42,6 +42,10 @@ inputs:
     description: "gate mode: \"true\" writes the findings as SARIF 2.1.0 to a file instead of printing the review to the job log, and uploads that file to GitHub Code Scanning (needs `permissions: security-events: write`, plus `actions: read` in private repositories; Requires CLI v1.19.0 or later). \"false\" (the default) changes nothing. Ignored with a warning in comment and guard modes."
     required: false
     default: "false"
+  since-last-review:
+    description: "comment mode: \"true\" reviews only the commits added since CommitBrief's last review of the pull request (passes `--since-last-review` to `commitbrief remote pr`; Requires CLI v1.20.0 or later). The CLI falls back to a full review whenever that range cannot be determined safely. \"false\" (the default) changes nothing. Ignored with a warning in gate and guard modes."
+    required: false
+    default: "false"
 
 runs:
   using: "composite"
@@ -95,6 +99,7 @@ runs:
         CB_FAILON: ${{ inputs.fail-on }}
         CB_POLICY: ${{ inputs.policy }}
         CB_SARIF: ${{ inputs.sarif-upload }}
+        CB_SLR: ${{ inputs.since-last-review }}
         CB_PR: ${{ github.event.pull_request.number }}
         CB_BASE: ${{ github.event.pull_request.base.sha }}
         CB_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -126,16 +131,28 @@ runs:
           echo "::warning::sarif-upload is only supported in gate mode; ignoring it in '$CB_MODE' mode."
         fi
 
+        # since-last-review likewise only means something in comment mode.
+        if [ "$CB_MODE" != "comment" ] && [ "$CB_SLR" != "false" ]; then
+          echo "::warning::since-last-review is only supported in comment mode; ignoring it in '$CB_MODE' mode."
+        fi
+
         case "$CB_MODE" in
           comment)
+            case "$CB_SLR" in
+              true|false) ;;
+              *) echo "::error::invalid since-last-review '$CB_SLR' (expected true|false)"; exit 1 ;;
+            esac
+            cmd=(commitbrief remote pr "$CB_PR")
             # --request-changes-on is opt-in (ADR-0016 §5): passing it with an
             # empty value would still enable the verdict, so omit it entirely
             # when the input is blank.
             if [ -n "$CB_RCO" ]; then
-              commitbrief remote pr "$CB_PR" --request-changes-on="$CB_RCO"
-            else
-              commitbrief remote pr "$CB_PR"
+              cmd+=(--request-changes-on="$CB_RCO")
             fi
+            if [ "$CB_SLR" = "true" ]; then
+              cmd+=(--since-last-review)
+            fi
+            "${cmd[@]}"
             ;;
           gate)
             case "$CB_SARIF" in

@@ -20,6 +20,7 @@ Minimum CLI version by mode:
 | `comment` | Requires v1.1.0 or later (`remote pr`) |
 | `guard` | **Requires v1.10.0 or later** (`commitbrief guard`) |
 | `gate` + `sarif-upload` | **Requires v1.19.0 or later** (`--sarif`) |
+| `comment` + `since-last-review` | **Requires v1.20.0 or later** (`remote pr --since-last-review`) |
 
 The action installs the prebuilt CLI binary from the matching GitHub
 release and verifies its SHA-256 against that release's `checksums.txt`
@@ -130,6 +131,7 @@ needed — Requires CLI v1.10.0 or later):
 | `fail-on` | `high` | gate mode: fail the job if a finding meets/exceeds this severity. |
 | `policy` | `.commitbrief/policy.yml` | guard mode: path to the policy file, relative to the repo root. |
 | `sarif-upload` | `false` | gate mode: `true` writes SARIF 2.1.0 to a file (instead of printing the review to the log) and uploads it to Code Scanning. Requires CLI v1.19.0 or later and `permissions: security-events: write`. Ignored with a warning in `comment` and `guard` modes. |
+| `since-last-review` | `false` | comment mode: `true` reviews only the commits added since CommitBrief's last review of the pull request and falls back to a full review when that range cannot be determined safely. Requires CLI v1.20.0 or later. Ignored with a warning in `gate` and `guard` modes. |
 | `version` | current release tag | commitbrief version to install, e.g. `v1.18.1`. A release tag installs the checksum-verified prebuilt binary; `latest` resolves to the newest stable release on every run; a branch or commit SHA builds from source with `go install`. |
 
 ## Permissions
