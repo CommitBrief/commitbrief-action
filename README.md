@@ -3,9 +3,10 @@
 Run [CommitBrief](https://github.com/CommitBrief/commitbrief) — LLM code
 review for git diffs — on your pull requests in CI. Three modes:
 
-- **`comment`** (default) — posts each finding as an inline review comment
-  and submits a verdict (approve / comment / request-changes) via
-  `commitbrief remote pr`.
+- **`comment`** (default) — posts findings as inline review comments, keeps
+  them in sync across runs (edits, resolves and reopens its own threads;
+  requires CLI v1.20.0 or later) and submits a verdict (approve / comment /
+  request-changes) via `commitbrief remote pr`.
 - **`gate`** — runs `commitbrief diff <base>...<head> --fail-on=<sev>` and
   fails the job when a finding meets/exceeds the threshold. No comments.
 - **`guard`** — runs `commitbrief guard --diff <base>...<head> --policy
@@ -126,7 +127,7 @@ needed — Requires CLI v1.10.0 or later):
 | `provider` | — (required) | `anthropic` \| `openai` \| `gemini` \| `deepseek` \| `mistral` \| `cohere` \| `ollama`. |
 | `api-key` | `""` | Provider API key — pass a repository secret. Not needed for `ollama`. |
 | `model` | `""` | Model override; defaults to the provider's default. |
-| `mode` | `comment` | `comment` (inline comments + verdict), `gate` (exit-code gate), or `guard` (declarative policy gate). |
+| `mode` | `comment` | `comment` (inline comments synced across runs + verdict), `gate` (exit-code gate), or `guard` (declarative policy gate). |
 | `request-changes-on` | `""` | comment mode: severity at/above which the verdict is request-changes. Requires CLI v1.5.0 or later to leave this empty (never request changes — approve/comment only); earlier versions of this action defaulted this input to `critical` instead. |
 | `fail-on` | `high` | gate mode: fail the job if a finding meets/exceeds this severity. |
 | `policy` | `.commitbrief/policy.yml` | guard mode: path to the policy file, relative to the repo root. |
