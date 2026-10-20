@@ -21,6 +21,7 @@ Minimum CLI version by mode:
 | `comment` | Requires v1.1.0 or later (`remote pr`) |
 | `guard` | **Requires v1.10.0 or later** (`commitbrief guard`) |
 | `gate` + `sarif-upload` | **Requires v1.19.0 or later** (`--sarif`) |
+| `guard` + `sarif-upload` | **Requires v1.21.0 or later** (`guard --sarif`) |
 | `comment` + `since-last-review` | **Requires v1.20.0 or later** (`remote pr --since-last-review`) |
 
 The action installs the prebuilt CLI binary from the matching GitHub
@@ -107,6 +108,25 @@ jobs:
           sarif-upload: true
 ```
 
+Guard mode with Code Scanning upload (Requires CLI v1.21.0 or later). The
+action writes only the findings that breach the policy as SARIF 2.1.0 and
+uploads them under the Code Scanning category `commitbrief/guard`, separate
+from gate mode's `commitbrief`, so the two never close each other's alerts. A
+passing policy uploads an empty result set. The upload runs even when the
+policy blocks the job, and is skipped when the review produced no log (for
+example a degraded review, which fails closed). Use the same `permissions:` and
+checkout as the gate example above:
+
+```yaml
+      - uses: CommitBrief/commitbrief-action@v1
+        with:
+          provider: anthropic
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          version: v1.21.0   # guard + sarif-upload needs CLI v1.21.0 or later
+          mode: guard
+          sarif-upload: true
+```
+
 Guard mode (declarative policy gate, no comments, no `pull-requests: write`
 needed — Requires CLI v1.10.0 or later):
 
@@ -131,7 +151,7 @@ needed — Requires CLI v1.10.0 or later):
 | `request-changes-on` | `""` | comment mode: severity at/above which the verdict is request-changes. Requires CLI v1.5.0 or later to leave this empty (never request changes — approve/comment only); earlier versions of this action defaulted this input to `critical` instead. |
 | `fail-on` | `high` | gate mode: fail the job if a finding meets/exceeds this severity. |
 | `policy` | `.commitbrief/policy.yml` | guard mode: path to the policy file, relative to the repo root. |
-| `sarif-upload` | `false` | gate mode: `true` writes SARIF 2.1.0 to a file (instead of printing the review to the log) and uploads it to Code Scanning. Requires CLI v1.19.0 or later and `permissions: security-events: write`. Ignored with a warning in `comment` and `guard` modes. |
+| `sarif-upload` | `false` | gate and guard modes: `true` writes SARIF 2.1.0 to a file (instead of printing the review, or in guard mode the findings that breach the policy, to the log) and uploads it to Code Scanning. Requires CLI v1.19.0 or later in gate mode, v1.21.0 or later in guard mode, and `permissions: security-events: write`. Ignored with a warning in `comment` mode. |
 | `since-last-review` | `false` | comment mode: `true` reviews only the commits added since CommitBrief's last review of the pull request and falls back to a full review when that range cannot be determined safely. Requires CLI v1.20.0 or later. Ignored with a warning in `gate` and `guard` modes. |
 | `version` | current release tag | commitbrief version to install, e.g. `v1.20.0`. A release tag installs the checksum-verified prebuilt binary; `latest` resolves to the newest stable release on every run; a branch or commit SHA builds from source with `go install`. |
 
@@ -140,7 +160,7 @@ needed — Requires CLI v1.10.0 or later):
 - **comment mode** needs `permissions: pull-requests: write` — the action
   uses the workflow's `GITHUB_TOKEN` (via `gh`) to post the review.
 - **gate mode** and **guard mode** only need `contents: read`.
-- **gate mode with `sarif-upload: true`** additionally needs
+- **gate or guard mode with `sarif-upload: true`** additionally needs
   `security-events: write` (and Code Scanning available for the repository).
   Private and internal repositories also need GitHub Code Security enabled
   and `actions: read`.

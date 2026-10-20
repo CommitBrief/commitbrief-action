@@ -39,7 +39,7 @@ inputs:
     required: false
     default: ".commitbrief/policy.yml"
   sarif-upload:
-    description: "gate mode: \"true\" writes the findings as SARIF 2.1.0 to a file instead of printing the review to the job log, and uploads that file to GitHub Code Scanning (needs `permissions: security-events: write`, plus `actions: read` in private repositories; Requires CLI v1.19.0 or later). \"false\" (the default) changes nothing. Ignored with a warning in comment and guard modes."
+    description: "gate and guard modes: \"true\" writes the findings as SARIF 2.1.0 to a file instead of printing the review (gate) or the findings that breach the policy (guard) to the job log, and uploads that file to GitHub Code Scanning (needs `permissions: security-events: write`, plus `actions: read` in private repositories; Requires CLI v1.19.0 or later in gate mode, v1.21.0 or later in guard mode). \"false\" (the default) changes nothing. Ignored with a warning in comment mode."
     required: false
     default: "false"
   since-last-review:
@@ -125,10 +125,16 @@ runs:
           exit 1
         fi
 
-        # sarif-upload only means something in gate mode: validate it there,
-        # and in every other mode just warn that it is ignored.
-        if [ "$CB_MODE" != "gate" ] && [ "$CB_SARIF" != "false" ]; then
-          echo "::warning::sarif-upload is only supported in gate mode; ignoring it in '$CB_MODE' mode."
+        # sarif-upload only means something in gate and guard modes: validate
+        # it there, and in comment mode just warn that it is ignored.
+        if [ "$CB_MODE" = "comment" ] && [ "$CB_SARIF" != "false" ]; then
+          echo "::warning::sarif-upload is only supported in gate and guard modes; ignoring it in 'comment' mode."
+        fi
+        if [ "$CB_MODE" = "gate" ] || [ "$CB_MODE" = "guard" ]; then
+          case "$CB_SARIF" in
+            true|false) ;;
+            *) echo "::error::invalid sarif-upload '$CB_SARIF' (expected true|false)"; exit 1 ;;
+          esac
         fi
 
         # since-last-review likewise only means something in comment mode.
@@ -155,10 +161,6 @@ runs:
             "${cmd[@]}"
             ;;
           gate)
-            case "$CB_SARIF" in
-              true|false) ;;
-              *) echo "::error::invalid sarif-upload '$CB_SARIF' (expected true|false)"; exit 1 ;;
-            esac
             if [ "$CB_SARIF" = "true" ]; then
               sarif_file="$RUNNER_TEMP/commitbrief.sarif"
               # The review renders the log before --fail-on decides the exit
@@ -174,7 +176,19 @@ runs:
             fi
             ;;
           guard)
-            commitbrief guard --diff "$CB_BASE...$CB_HEAD" --policy "$CB_POLICY"
+            if [ "$CB_SARIF" = "true" ]; then
+              sarif_file="$RUNNER_TEMP/commitbrief-guard.sarif"
+              # guard writes the log before the verdict decides the exit code,
+              # so a breached policy still leaves a file to upload (the verdict
+              # itself goes to stderr). A run that fails closed (a degraded
+              # review, a missing policy) writes no file, and the trap below
+              # then publishes nothing rather than an empty or stale log.
+              rm -f "$sarif_file"
+              trap 'if [ -s "$sarif_file" ]; then echo "sarif-file=$sarif_file" >> "$GITHUB_OUTPUT"; fi' EXIT
+              commitbrief guard --diff "$CB_BASE...$CB_HEAD" --policy "$CB_POLICY" --sarif --output "$sarif_file"
+            else
+              commitbrief guard --diff "$CB_BASE...$CB_HEAD" --policy "$CB_POLICY"
+            fi
             ;;
           *)
             echo "::error::unknown mode '$CB_MODE' (expected comment|gate|guard)"
@@ -182,16 +196,19 @@ runs:
             ;;
         esac
 
-    # gate mode + sarif-upload: send the log to Code Scanning, also when the
-    # gate failed the job (that is when the alerts matter). Skipped on cancel
-    # and when the review wrote no log. Pinned by commit SHA (v4.38.3, an
+    # gate/guard mode + sarif-upload: send the log to Code Scanning, also when
+    # the gate failed the job (that is when the alerts matter). Skipped on
+    # cancel and when the review wrote no log. Pinned by commit SHA (v4.38.3, an
     # annotated tag resolved to its commit).
     - name: Upload SARIF to Code Scanning
-      if: ${{ !cancelled() && inputs.mode == 'gate' && inputs.sarif-upload == 'true' && steps.review.outputs.sarif-file != '' }}
+      if: ${{ !cancelled() && (inputs.mode == 'gate' || inputs.mode == 'guard') && inputs.sarif-upload == 'true' && steps.review.outputs.sarif-file != '' }}
       uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
       with:
         sarif_file: ${{ steps.review.outputs.sarif-file }}
-        category: commitbrief
+        # Matches the category the CLI stamps into the log (commitbrief/ for
+        # gate, commitbrief/guard/ for guard), so the two modes never close
+        # each other's alerts.
+        category: ${{ inputs.mode == 'guard' && 'commitbrief/guard' || 'commitbrief' }}
         # The CLI numbers lines against the PR head (base...head), while the
         # defaults would attach them to the merge commit; point the upload at
         # the head so annotations and line hashes match.
