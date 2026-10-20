@@ -57,7 +57,7 @@ jobs:
         with:
           provider: anthropic
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          version: v1.18.1
+          version: v1.20.0
           # mode: comment            # default
           # request-changes-on: high # default: "" (never request changes)
 ```
@@ -69,7 +69,7 @@ Gate mode (pass/fail only, no comments, no `pull-requests: write` needed):
         with:
           provider: openai
           api-key: ${{ secrets.OPENAI_API_KEY }}
-          version: v1.18.1
+          version: v1.20.0
           mode: gate
           fail-on: high
 ```
@@ -101,7 +101,7 @@ jobs:
         with:
           provider: openai
           api-key: ${{ secrets.OPENAI_API_KEY }}
-          version: v1.19.0   # sarif-upload needs CLI v1.19.0 or later
+          version: v1.20.0   # sarif-upload needs CLI v1.19.0 or later
           mode: gate
           fail-on: high
           sarif-upload: true
@@ -115,7 +115,7 @@ needed — Requires CLI v1.10.0 or later):
         with:
           provider: anthropic
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          version: v1.18.1
+          version: v1.20.0
           mode: guard
           policy: .commitbrief/policy.yml   # default; commit this file to the repo
 ```
@@ -133,7 +133,7 @@ needed — Requires CLI v1.10.0 or later):
 | `policy` | `.commitbrief/policy.yml` | guard mode: path to the policy file, relative to the repo root. |
 | `sarif-upload` | `false` | gate mode: `true` writes SARIF 2.1.0 to a file (instead of printing the review to the log) and uploads it to Code Scanning. Requires CLI v1.19.0 or later and `permissions: security-events: write`. Ignored with a warning in `comment` and `guard` modes. |
 | `since-last-review` | `false` | comment mode: `true` reviews only the commits added since CommitBrief's last review of the pull request and falls back to a full review when that range cannot be determined safely. Requires CLI v1.20.0 or later. Ignored with a warning in `gate` and `guard` modes. |
-| `version` | current release tag | commitbrief version to install, e.g. `v1.18.1`. A release tag installs the checksum-verified prebuilt binary; `latest` resolves to the newest stable release on every run; a branch or commit SHA builds from source with `go install`. |
+| `version` | current release tag | commitbrief version to install, e.g. `v1.20.0`. A release tag installs the checksum-verified prebuilt binary; `latest` resolves to the newest stable release on every run; a branch or commit SHA builds from source with `go install`. |
 
 ## Permissions
 
