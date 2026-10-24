@@ -202,7 +202,7 @@ runs:
     # annotated tag resolved to its commit).
     - name: Upload SARIF to Code Scanning
       if: ${{ !cancelled() && (inputs.mode == 'gate' || inputs.mode == 'guard') && inputs.sarif-upload == 'true' && steps.review.outputs.sarif-file != '' }}
-      uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+      uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
       with:
         sarif_file: ${{ steps.review.outputs.sarif-file }}
         # Matches the category the CLI stamps into the log (commitbrief/ for
