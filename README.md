@@ -170,8 +170,10 @@ needed — Requires CLI v1.10.0 or later):
 ## Notes
 
 - The provider's structured-output support determines review quality;
-  weaker models degrade to plain text (handled gracefully). CLI-tool
-  providers (`claude-cli` / `gemini-cli`) are **not** usable here — they
+  weaker models degrade to plain text. In `comment` and `gate` mode that is
+  handled gracefully (the job still passes); in `guard` mode a degraded
+  review blocks the job, because the policy cannot be verified (Requires CLI
+  v1.21.1 or later). CLI-tool providers (`claude-cli` / `gemini-cli`) are **not** usable here — they
   need a local authenticated CLI, which isn't available in CI.
 - The default `version` moves only when the `v1` tag of this action moves.
   `latest` asks the GitHub releases API on every run and can change the CLI
