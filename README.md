@@ -58,7 +58,7 @@ jobs:
         with:
           provider: anthropic
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          version: v1.21.0
+          version: v1.21.1
           # mode: comment            # default
           # request-changes-on: high # default: "" (never request changes)
 ```
@@ -70,7 +70,7 @@ Gate mode (pass/fail only, no comments, no `pull-requests: write` needed):
         with:
           provider: openai
           api-key: ${{ secrets.OPENAI_API_KEY }}
-          version: v1.21.0
+          version: v1.21.1
           mode: gate
           fail-on: high
 ```
@@ -102,7 +102,7 @@ jobs:
         with:
           provider: openai
           api-key: ${{ secrets.OPENAI_API_KEY }}
-          version: v1.21.0   # sarif-upload needs CLI v1.19.0 or later
+          version: v1.21.1   # sarif-upload needs CLI v1.19.0 or later
           mode: gate
           fail-on: high
           sarif-upload: true
@@ -122,7 +122,7 @@ checkout as the gate example above:
         with:
           provider: anthropic
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          version: v1.21.0   # guard + sarif-upload needs CLI v1.21.0 or later
+          version: v1.21.1   # guard + sarif-upload needs CLI v1.21.0 or later
           mode: guard
           sarif-upload: true
 ```
@@ -135,7 +135,7 @@ needed — Requires CLI v1.10.0 or later):
         with:
           provider: anthropic
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          version: v1.21.0
+          version: v1.21.1
           mode: guard
           policy: .commitbrief/policy.yml   # default; commit this file to the repo
 ```
@@ -153,7 +153,7 @@ needed — Requires CLI v1.10.0 or later):
 | `policy` | `.commitbrief/policy.yml` | guard mode: path to the policy file, relative to the repo root. |
 | `sarif-upload` | `false` | gate and guard modes: `true` writes SARIF 2.1.0 to a file (instead of printing the review, or in guard mode the findings that breach the policy, to the log) and uploads it to Code Scanning. Requires CLI v1.19.0 or later in gate mode, v1.21.0 or later in guard mode, and `permissions: security-events: write`. Ignored with a warning in `comment` mode. |
 | `since-last-review` | `false` | comment mode: `true` reviews only the commits added since CommitBrief's last review of the pull request and falls back to a full review when that range cannot be determined safely. Requires CLI v1.20.0 or later. Ignored with a warning in `gate` and `guard` modes. |
-| `version` | current release tag | commitbrief version to install, e.g. `v1.21.0`. A release tag installs the checksum-verified prebuilt binary; `latest` resolves to the newest stable release on every run; a branch or commit SHA builds from source with `go install`. |
+| `version` | current release tag | commitbrief version to install, e.g. `v1.21.1`. A release tag installs the checksum-verified prebuilt binary; `latest` resolves to the newest stable release on every run; a branch or commit SHA builds from source with `go install`. |
 
 ## Permissions
 
